@@ -1,0 +1,47 @@
+{
+    "$schema": "https://apify.com/schemas/v1/dataset.ide.json",
+    "actorSpecification": 1,
+    "fields": {
+        "type": "object",
+        "properties": {
+            "schema_version": { "type": "string" },
+            "type": { "type": "string", "enum": ["document", "error"] },
+            "id": { "type": ["string", "null"] },
+            "source": { "type": "string", "enum": ["text", "url"] },
+            "source_url": { "type": ["string", "null"] },
+            "content_type": { "type": "string" },
+            "processed_at": { "type": "string" },
+            "chars": { "type": "integer" },
+            "truncated": { "type": "boolean" },
+            "mode": { "type": "string", "enum": ["detect", "redact", "restore"] },
+            "finding_count": { "type": "integer" },
+            "counts_by_type": { "type": "object" },
+            "risk_level": { "type": "string", "enum": ["none", "low", "medium", "high"] },
+            "findings": { "type": "array", "items": { "type": "object" } },
+            "output_text": { "type": ["string", "null"] },
+            "placeholder_map": { "type": "object" },
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "retryable": { "type": "boolean" }
+        }
+    },
+    "views": {
+        "overview": {
+            "title": "Overview",
+            "transformation": { "fields": ["id", "type", "risk_level", "finding_count", "counts_by_type", "output_text", "code", "message"] },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "id": { "label": "ID" },
+                    "type": { "label": "Row" },
+                    "risk_level": { "label": "Risk" },
+                    "finding_count": { "label": "Findings", "format": "number" },
+                    "counts_by_type": { "label": "By type", "format": "object" },
+                    "output_text": { "label": "Redacted text" },
+                    "code": { "label": "Error code" },
+                    "message": { "label": "Error" }
+                }
+            }
+        }
+    }
+}

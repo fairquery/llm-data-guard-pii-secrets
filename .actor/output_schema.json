@@ -1,0 +1,9 @@
+{
+    "$schema": "https://apify.com/schemas/v1/output.ide.json",
+    "actorOutputSchemaVersion": 1,
+    "title": "LLM Data Guard output",
+    "properties": {
+        "dataset": { "type": "string", "title": "Results (document / error rows)", "template": "{{links.apiDefaultDatasetUrl}}/items" },
+        "runSummary": { "type": "string", "title": "Run summary (counts only)", "template": "{{links.apiDefaultKeyValueStoreUrl}}/records/RUN_SUMMARY" }
+    }
+}

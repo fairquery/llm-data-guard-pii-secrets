@@ -1,0 +1,19 @@
+{
+    "$schema": "https://apify.com/schemas/v1/actor.ide.json",
+    "actorSpecification": 1,
+    "name": "llm-data-guard-pii-secrets",
+    "title": "LLM Data Guard: PII & Secret Redactor",
+    "description": "Detect and redact PII (emails, phones, SSNs, Luhn-checked cards, IBANs, IPs, optional names/addresses) and secrets (API keys, tokens, private keys, high-entropy strings) in text, HTML or PDF before it reaches an LLM. Placeholder, mask or hash redaction with reversible map. No data retention.",
+    "version": "0.1",
+    "buildTag": "latest",
+    "meta": { "templateId": "ts-empty", "generatedBy": "Grok Bot" },
+    "defaultRunOptions": { "build": "latest", "memoryMbytes": 256, "timeoutSecs": 600 },
+    "minMemoryMbytes": 256,
+    "maxMemoryMbytes": 1024,
+    "input": "./input_schema.json",
+    "output": "./output_schema.json",
+    "storages": { "dataset": "./dataset_schema.json", "keyValueStore": "./key_value_store_schema.json" },
+    "dockerfile": "./Dockerfile",
+    "dockerContextDir": "..",
+    "readme": "../README.md"
+}

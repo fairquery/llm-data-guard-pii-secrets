@@ -1,0 +1,164 @@
+{
+    "$schema": "https://apify.com/schemas/v1/input.ide.json",
+    "title": "LLM Data Guard",
+    "description": "Detect and redact PII and secrets before text reaches an LLM.",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "texts": {
+            "title": "Texts",
+            "type": "array",
+            "editor": "stringList",
+            "sectionCaption": "Documents",
+            "description": "Each entry is one document (prompt, chat message, ticket, log line, file content).",
+            "prefill": ["Hi, I'm Jane (jane.doe@acme.com, +1 415-555-0132). Card 4111 1111 1111 1111, SSN 123-45-6789.", "deploy: AWS key AKIAIOSFODNN7EXAMPLE, api_key = \"Zx9Qv7Lm2Rt8Wp4Ks6Hd1\""]
+        },
+        "documents": {
+            "title": "Documents with IDs",
+            "type": "array",
+            "editor": "json",
+            "description": "Optional: [{\"id\": \"ticket-42\", \"text\": \"...\"}]. The id is echoed in the output row.",
+            "default": []
+        },
+        "documentUrls": {
+            "title": "Document URLs",
+            "type": "array",
+            "editor": "stringList",
+            "description": "Optional: public URLs of text, Markdown, JSON, CSV, HTML or PDF files (max 10 MB each).",
+            "default": []
+        },
+        "mode": {
+            "title": "Mode",
+            "type": "string",
+            "editor": "select",
+            "sectionCaption": "Mode & redaction",
+            "description": "detect = report findings only; redact = also return redacted text; restore = put original values back into LLM output using a placeholder map.",
+            "enum": ["detect", "redact", "restore"],
+            "enumTitles": ["Detect only", "Detect + redact", "Restore placeholders"],
+            "default": "redact"
+        },
+        "redactionStyle": {
+            "title": "Redaction style",
+            "type": "string",
+            "editor": "select",
+            "description": "placeholder = [EMAIL_1] (reversible with the map); mask = j***@a***.com / **** 1111; hash = [EMAIL:sha256 prefix] (stable for the same salt).",
+            "enum": ["placeholder", "mask", "hash"],
+            "default": "placeholder"
+        },
+        "returnPlaceholderMap": {
+            "title": "Return placeholder map",
+            "type": "boolean",
+            "description": "Include {\"[EMAIL_1]\": \"jane@acme.com\"} in each row so you can restore values after the LLM answers. The map contains the original sensitive values: only enable it if you will delete the dataset after use.",
+            "default": false
+        },
+        "consistentPlaceholders": {
+            "title": "Consistent placeholders across documents",
+            "type": "boolean",
+            "description": "Same value gets the same placeholder in every document of the run.",
+            "default": true
+        },
+        "placeholderMap": {
+            "title": "Placeholder map (restore mode)",
+            "type": "object",
+            "editor": "json",
+            "description": "Map returned by a previous redact run; used only in restore mode.",
+            "default": {}
+        },
+        "hashSalt": {
+            "title": "Hash salt",
+            "type": "string",
+            "editor": "textfield",
+            "isSecret": true,
+            "description": "Optional salt for hash style. Leave empty for a random per-run salt (hashes then cannot be linked across runs)."
+        },
+        "detectPii": {
+            "title": "Detect PII",
+            "type": "boolean",
+            "sectionCaption": "Detectors",
+            "description": "Emails, phones, US SSNs, credit cards (Luhn), IBANs (mod-97), UK NI numbers, IPv4/IPv6.",
+            "default": true
+        },
+        "detectSecrets": {
+            "title": "Detect secrets",
+            "type": "boolean",
+            "description": "Gitleaks-style rules: AWS, GitHub, GitLab, Slack, Stripe, Google, OpenAI, Anthropic, Hugging Face, npm, SendGrid, Twilio, Azure keys, JWTs, private keys, URL credentials, key=value assignments with an entropy check.",
+            "default": true
+        },
+        "detectNames": {
+            "title": "Detect person names (NER)",
+            "type": "boolean",
+            "description": "Open-source NER (compromise, English). Lower precision; adds a little CPU time.",
+            "default": false
+        },
+        "detectAddresses": {
+            "title": "Detect street addresses & places",
+            "type": "boolean",
+            "description": "Street-address pattern (English formats) plus NER place names.",
+            "default": false
+        },
+        "entropyScan": {
+            "title": "Flag any high-entropy string",
+            "type": "boolean",
+            "description": "Also flag unlabeled random-looking tokens (20+ chars). Catches unknown key formats; may flag hashes and IDs.",
+            "default": false
+        },
+        "minEntropy": {
+            "title": "Minimum entropy (bits/char)",
+            "type": "number",
+            "description": "Threshold for generic key=value secrets and the entropy scan.",
+            "default": 3.5,
+            "minimum": 2,
+            "maximum": 6
+        },
+        "defaultPhoneRegion": {
+            "title": "Default phone region",
+            "type": "string",
+            "editor": "textfield",
+            "description": "ISO country code used for phone numbers written without +country prefix.",
+            "default": "US"
+        },
+        "entityTypes": {
+            "title": "Only these types",
+            "type": "array",
+            "editor": "stringList",
+            "description": "Optional filter, e.g. EMAIL, PHONE, CREDIT_CARD, AWS_ACCESS_KEY. Empty = all enabled detectors.",
+            "default": []
+        },
+        "allowList": {
+            "title": "Allow list",
+            "type": "array",
+            "editor": "stringList",
+            "description": "Exact values never flagged (e.g. your public support@ address).",
+            "default": []
+        },
+        "includeFindingValues": {
+            "title": "Include raw values in findings",
+            "type": "boolean",
+            "sectionCaption": "Output & limits",
+            "description": "Off by default: findings carry only a masked preview and offsets, so the dataset holds no raw sensitive values.",
+            "default": false
+        },
+        "maxDocuments": {
+            "title": "Max documents",
+            "type": "integer",
+            "description": "Safety cap per run.",
+            "default": 1000,
+            "minimum": 1,
+            "maximum": 100000
+        },
+        "maxCharsPerDocument": {
+            "title": "Max characters per document",
+            "type": "integer",
+            "description": "Longer documents are truncated (row gets truncated=true).",
+            "default": 1000000,
+            "minimum": 1000,
+            "maximum": 20000000
+        },
+        "purgeInputAfterRun": {
+            "title": "Purge input after run",
+            "type": "boolean",
+            "description": "Delete the INPUT record from the run's key-value store when the run ends, so only the results dataset remains.",
+            "default": true
+        }
+    }
+}
