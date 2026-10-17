@@ -115,7 +115,7 @@ To cap spend, set a maximum cost per run in the run options; the Actor stops cle
 
 ## Memory / runtime
 
-Default **256 MB**, no browser, no proxy. Regex detectors process roughly 1–5 MB of text per second; NER (`detectNames`) is slower, so give it 512 MB for big batches. PDFs are parsed with `unpdf` (text layer only, no OCR).
+Runs at a fixed **512 MB** (default and maximum; enough for NER), no browser, no proxy. Regex detectors process roughly 1–5 MB of text per second; NER (`detectNames`) is slower, so split very big batches into several runs. PDFs are parsed with `unpdf` (text layer only, no OCR).
 
 ## MCP / Apify tools
 
@@ -159,7 +159,7 @@ Docker: the root `Dockerfile` builds the MCP server image (`docker build -t fair
 | `DOCUMENT_FETCH_FAILED` | The URL was unreachable, over 10 MB or not a supported type. These rows are free. Scanned PDFs have no text layer, and there is no OCR. |
 | `PLACEHOLDER_MAP_MISSING` in restore mode | Pass the `placeholderMap` returned by the redact run (`returnPlaceholderMap: true`). |
 | Too many findings (false positives) | Add known-safe values to `allowList`, raise `minEntropy`, keep `entropyScan` off, or limit `entityTypes`. |
-| Names or addresses not detected | `detectNames` and `detectAddresses` are opt-in and English-focused. Turn them on, and give big batches 512 MB. |
+| Names or addresses not detected | `detectNames` and `detectAddresses` are opt-in and English-focused. Turn them on (they are slower; split very big batches). |
 
 ## FAQ
 
