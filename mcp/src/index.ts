@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
  * Fairquery stdio MCP server for Apify Actor fairquery/llm-data-guard-pii-secrets.
- * Tools: guard_text (runs the Actor, needs APIFY_TOKEN) and list_detectors (free, local).
+ * Tools: guard_text (runs the Actor, needs APIFY_TOKEN; waitForFinish=false starts it in the background),
+ * get_run_results (free read of such a run) and list_detectors (free, local).
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { callActorTool, ok, READ_ONLY_LOCAL, READ_ONLY_REMOTE } from './common.js';
+import { callActorTool, compact, fail, getToken, ok, readRun, READ_ONLY_LOCAL, READ_ONLY_REMOTE, RunLookupError, startActor, TOKEN_MISSING } from './common.js';
 
 const ACTOR_ID = 'fairquery~llm-data-guard-pii-secrets';
 
@@ -18,7 +19,7 @@ const DETECTORS = {
     pricing_events: { 'document-processed': '$0.0015 per document', finding: '$0.0002 per finding' },
 };
 
-const server = new McpServer({ name: 'fairquery-llm-data-guard', version: '1.0.3' });
+const server = new McpServer({ name: 'fairquery-llm-data-guard', version: '1.1.0' });
 
 server.registerTool(
     'guard_text',
@@ -31,7 +32,7 @@ server.registerTool(
             'COST: paid. Runs Apify Actor fairquery/llm-data-guard-pii-secrets with your APIFY_TOKEN; pay-per-event: $0.0015 per document processed + $0.0002 per finding (error rows free). Example: 10 documents with 20 findings ~ $0.02. Typical run a few seconds.',
             'RETURNS: one type="document" row per input (findings[] hold masked previews only, never raw values; output_text only in redact/restore modes; placeholder_map only with returnPlaceholderMap=true) or free type="error" rows with code/message.',
             'EXAMPLE: {"texts":["Mail jane@acme.com, key AKIAIOSFODNN7EXAMPLE"],"mode":"redact","redactionStyle":"placeholder"} -> output_text with the email replaced by [EMAIL_1] and the key by a placeholder; findings lists EMAIL and AWS_ACCESS_KEY.',
-            'PARAMETERS: texts and/or documentUrls: at least one is required although the schema marks both optional (neither -> a free INPUT_EMPTY error row); both may be combined, and every text or URL is one billed document (max 1000 per run; extras get a free MAX_DOCUMENTS_EXCEEDED row). Documents longer than 1,000,000 chars are cut there (truncated=true). mode decides which other fields apply: "detect" ignores redactionStyle / returnPlaceholderMap; "redact" uses them; "restore" ignores all detector options and only replaces placeholders found in texts with values from placeholderMap (a placeholder missing from the map stays unchanged; restore rows have 0 findings, so they cost the per-document fee only). returnPlaceholderMap only works with mode="redact" + redactionStyle="placeholder"; placeholders are consistent across all documents of one call ([EMAIL_1] is the same address everywhere) but numbering restarts on every call, so keep each call\'s map. detectNames / detectAddresses must be true before PERSON / LOCATION / STREET_ADDRESS can be found or used in entityTypes. entityTypes filters findings after detection (case-insensitive; unknown names match nothing, no error) and is the main lever to cut per-finding cost; allowList compares the whole matched value case-insensitively (not substrings). defaultPhoneRegion only affects numbers without a +country prefix.',
+            'PARAMETERS: texts and/or documentUrls: at least one is required although the schema marks both optional (neither -> a free INPUT_EMPTY error row); both may be combined, and every text or URL is one billed document (max 1000 per run; extras get a free MAX_DOCUMENTS_EXCEEDED row). Documents longer than 1,000,000 chars are cut there (truncated=true). mode decides which other fields apply: "detect" ignores redactionStyle / returnPlaceholderMap; "redact" uses them; "restore" ignores all detector options and only replaces placeholders found in texts with values from placeholderMap (a placeholder missing from the map stays unchanged; restore rows have 0 findings, so they cost the per-document fee only). returnPlaceholderMap only works with mode="redact" + redactionStyle="placeholder"; placeholders are consistent across all documents of one call ([EMAIL_1] is the same address everywhere) but numbering restarts on every call, so keep each call\'s map. detectNames / detectAddresses must be true before PERSON / LOCATION / STREET_ADDRESS can be found or used in entityTypes. entityTypes filters findings after detection (case-insensitive; unknown names match nothing, no error) and is the main lever to cut per-finding cost; allowList compares the whole matched value case-insensitively (not substrings). defaultPhoneRegion only affects numbers without a +country prefix. waitForFinish=false returns at once with run.run_id while the run continues in your Apify account (same price); use it for big batches or many URLs/PDFs that may not finish within this call\'s 280 s wait, then poll get_run_results.',
         ].join('\n'),
         inputSchema: {
             texts: z
@@ -77,14 +78,71 @@ server.registerTool(
                 .length(2)
                 .optional()
                 .describe('Optional, default "US". ISO 3166-1 alpha-2 country code (exactly 2 letters, case-insensitive) used to parse phone numbers written without a +country prefix. Examples: "US", "DE", "GB"'),
+            waitForFinish: z
+                .boolean()
+                .optional()
+                .describe('Optional boolean, default true. true waits up to 280 s and returns the rows; false starts the run and returns immediately with run.run_id (poll get_run_results). Same price either way. Example: false'),
         },
         outputSchema: {
             items: z.array(z.record(z.unknown())).describe('Dataset rows: type=document (findings, risk_level, output_text) or type=error'),
             count: z.number().describe('Number of rows in items'),
+            run: z.record(z.unknown()).optional().describe('Only with waitForFinish=false: run_id, status, dataset_id, console_url'),
         },
         annotations: { title: 'Guard text for LLMs', ...READ_ONLY_REMOTE },
     },
-    async (args) => callActorTool(ACTOR_ID, args),
+    async ({ waitForFinish, ...args }) => {
+        if (waitForFinish !== false) return callActorTool(ACTOR_ID, args);
+        const token = getToken();
+        if (!token) return TOKEN_MISSING();
+        try {
+            const run = await startActor(ACTOR_ID, compact(args), token);
+            return ok({ items: [], count: 0, run });
+        } catch (e) {
+            return fail('APIFY_ACTOR_RUN_FAILED', e instanceof Error ? e.message : String(e));
+        }
+    },
+);
+
+server.registerTool(
+    'get_run_results',
+    {
+        title: 'Get results of a background guard_text run (free)',
+        description: [
+            'WHAT: Read the status and result rows of a guard_text run started with waitForFinish=false, one page at a time.',
+            'WHEN TO USE: after guard_text returned run.run_id (large batches, many documentUrls or PDFs), to poll until finished is true and page through the document rows; rows already written are returned while the run is still RUNNING.',
+            'WHEN NOT TO USE: to start a scan (guard_text) or list entity types (list_detectors). Cannot read runs of other Actors.',
+            'BEHAVIOR: GET requests to the Apify API only (actor, run, dataset); never starts, aborts or re-bills a run. Typically <1 s; poll every 10-30 s.',
+            'COST: free; needs the APIFY_TOKEN that started the run. Reading charges no Actor event (the run was billed per document and finding when it ran).',
+            'RETURNS: run (run_id, status, finished) plus one page of the same rows guard_text returns; Errors: APIFY_TOKEN_MISSING, RUN_NOT_FOUND, RUN_NOT_FOR_THIS_ACTOR, APIFY_TOKEN_INVALID, APIFY_RUN_LOOKUP_FAILED / APIFY_DATASET_READ_FAILED (retryable).',
+            'PARAMETERS: runId is run.run_id from guard_text (also in the Apify console URL). status is READY | RUNNING | SUCCEEDED | FAILED | ABORTED | TIMED-OUT; finished=true for the last four, after which total no longer changes. A FAILED or TIMED-OUT run still returns the rows it wrote. offset/limit page the rows in write order; total counts all rows written so far, so keep calling with nextOffset until it is null and finished is true. Rows can contain output_text and, if requested, placeholder_map with ORIGINAL values, exactly as guard_text returns them.',
+            'EXAMPLE: {"runId":"a1B2c3D4e5F6g7H8i"} -> {"run":{"status":"SUCCEEDED","finished":true},"count":1,"total":1,"items":[{"type":"document","risk_level":"high",...}]}',
+        ].join('\n'),
+        inputSchema: {
+            runId: z.string().min(5).max(64).regex(/^[A-Za-z0-9]+$/).describe('Required. Apify run ID (letters and digits) from guard_text run.run_id. Example: "a1B2c3D4e5F6g7H8i"'),
+            offset: z.number().int().min(0).optional().describe('Optional integer >= 0, default 0; use nextOffset from the previous page. Example: 100'),
+            limit: z.number().int().min(1).max(1000).optional().describe('Optional page size, integer 1-1000, default 100. Example: 250'),
+        },
+        outputSchema: {
+            run: z.record(z.unknown()).describe('run_id, status, finished, dataset_id, started_at, finished_at, console_url'),
+            items: z.array(z.record(z.unknown())).describe('Dataset rows: type=document or type=error'),
+            count: z.number().describe('Rows in this page'),
+            total: z.number().describe('Rows written by the run so far'),
+            nextOffset: z.number().nullable().describe('Offset of the next page, or null'),
+        },
+        annotations: { title: 'Get guard_text run results (free)', ...READ_ONLY_REMOTE },
+    },
+    async ({ runId, offset = 0, limit = 100 }) => {
+        const token = getToken();
+        if (!token) return TOKEN_MISSING();
+        try {
+            const { info, items, total } = await readRun(ACTOR_ID, runId, token, offset, limit);
+            const next = items.length === limit || offset + items.length < total ? offset + items.length : null; // a full page may have more
+            return ok({ run: info, items, count: items.length, total, nextOffset: next });
+        } catch (e) {
+            if (e instanceof RunLookupError) return fail(e.code, e.message + (e.retryable ? ' (retryable)' : ''));
+            return fail('APIFY_RUN_LOOKUP_FAILED', (e instanceof Error ? e.message : String(e)) + ' (retryable)');
+        }
+    },
 );
 
 server.registerTool(
