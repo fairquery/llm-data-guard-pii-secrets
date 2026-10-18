@@ -18,7 +18,7 @@ const DETECTORS = {
     pricing_events: { 'document-processed': '$0.0015 per document', finding: '$0.0002 per finding' },
 };
 
-const server = new McpServer({ name: 'fairquery-llm-data-guard', version: '1.0.2' });
+const server = new McpServer({ name: 'fairquery-llm-data-guard', version: '1.0.3' });
 
 server.registerTool(
     'guard_text',
@@ -29,15 +29,15 @@ server.registerTool(
             'WHEN TO USE: before sending prompts, tickets, logs or files to an LLM or third party; to audit text for leaked credentials; to de-anonymize an LLM answer after a placeholder redaction.',
             'WHEN NOT TO USE: to see which entity types exist or pick entityTypes, call list_detectors (free, local). Not for binary files/images (PDF text layer only, no OCR) or for validating whether an email is deliverable.',
             'COST: paid. Runs Apify Actor fairquery/llm-data-guard-pii-secrets with your APIFY_TOKEN; pay-per-event: $0.0015 per document processed + $0.0002 per finding (error rows free). Example: 10 documents with 20 findings ~ $0.02. Typical run a few seconds.',
-            'RETURNS: {count, items}. One type="document" row per input with id, source, chars, truncated, mode, finding_count, counts_by_type, risk_level, findings[] (type, offsets, masked preview; raw values are not returned), output_text (redact/restore modes), placeholder_map (only if returnPlaceholderMap=true); or type="error" rows with code/message.',
+            'RETURNS: one type="document" row per input (findings[] hold masked previews only, never raw values; output_text only in redact/restore modes; placeholder_map only with returnPlaceholderMap=true) or free type="error" rows with code/message.',
             'EXAMPLE: {"texts":["Mail jane@acme.com, key AKIAIOSFODNN7EXAMPLE"],"mode":"redact","redactionStyle":"placeholder"} -> output_text with the email replaced by [EMAIL_1] and the key by a placeholder; findings lists EMAIL and AWS_ACCESS_KEY.',
-            'PARAMETERS: texts and/or documentUrls: at least one is required although the schema marks both optional (neither -> a free INPUT_EMPTY error row); both may be combined, and every text or URL is one billed document (max 1000 per run; extras get a free MAX_DOCUMENTS_EXCEEDED row). Documents longer than 1,000,000 chars are cut there (truncated=true). mode decides which other fields apply: "detect" ignores redactionStyle / returnPlaceholderMap; "redact" uses them; "restore" ignores all detector options and only replaces placeholders found in texts with values from placeholderMap (a placeholder missing from the map stays unchanged; restore rows have 0 findings, so they cost $0.0015 each). returnPlaceholderMap only works with mode="redact" + redactionStyle="placeholder"; placeholders are consistent across all documents of one call ([EMAIL_1] is the same address everywhere) but numbering restarts on every call, so keep each call\'s map. detectNames / detectAddresses must be true before PERSON / LOCATION / STREET_ADDRESS can be found or used in entityTypes. entityTypes filters findings after detection (case-insensitive; unknown names match nothing, no error) and is the main lever to cut per-finding cost; allowList compares the whole matched value case-insensitively (not substrings). defaultPhoneRegion only affects numbers without a +country prefix.',
+            'PARAMETERS: texts and/or documentUrls: at least one is required although the schema marks both optional (neither -> a free INPUT_EMPTY error row); both may be combined, and every text or URL is one billed document (max 1000 per run; extras get a free MAX_DOCUMENTS_EXCEEDED row). Documents longer than 1,000,000 chars are cut there (truncated=true). mode decides which other fields apply: "detect" ignores redactionStyle / returnPlaceholderMap; "redact" uses them; "restore" ignores all detector options and only replaces placeholders found in texts with values from placeholderMap (a placeholder missing from the map stays unchanged; restore rows have 0 findings, so they cost the per-document fee only). returnPlaceholderMap only works with mode="redact" + redactionStyle="placeholder"; placeholders are consistent across all documents of one call ([EMAIL_1] is the same address everywhere) but numbering restarts on every call, so keep each call\'s map. detectNames / detectAddresses must be true before PERSON / LOCATION / STREET_ADDRESS can be found or used in entityTypes. entityTypes filters findings after detection (case-insensitive; unknown names match nothing, no error) and is the main lever to cut per-finding cost; allowList compares the whole matched value case-insensitively (not substrings). defaultPhoneRegion only affects numbers without a +country prefix.',
         ].join('\n'),
         inputSchema: {
             texts: z
                 .array(z.string())
                 .optional()
-                .describe('Optional if documentUrls is given (at least one of the two is required). One string per document (prompt, chat message, ticket, log, file content), <= 1,000,000 chars each (longer is truncated); $0.0015 per document. Example: ["Hi, I am Jane (jane.doe@acme.com)"]'),
+                .describe('Optional if documentUrls is given (at least one of the two is required). One string per document (prompt, chat message, ticket, log, file content), <= 1,000,000 chars each (longer is truncated); one billed document each. Example: ["Hi, I am Jane (jane.doe@acme.com)"]'),
             documentUrls: z
                 .array(z.string().url())
                 .optional()
@@ -95,8 +95,9 @@ server.registerTool(
             'WHAT: Static catalog of the PII and secret entity types guard_text can detect, the available redaction styles, and the billable pricing events.',
             'WHEN TO USE: before guard_text, to choose entityTypes / redactionStyle or to explain coverage to a user.',
             'WHEN NOT TO USE: to actually scan or redact text - use guard_text.',
-            'COST: free; local, no network, no APIFY_TOKEN, deterministic. (guard_text costs $0.0015 per document + $0.0002 per finding.)',
-            'RETURNS: {pii: string[], secret: string[], redaction_styles: {style: example}, pricing_events: {event: unit}}.',
+            'BEHAVIOR: static catalog shipped with this server version; no network call.',
+            'COST: free; no APIFY_TOKEN. (guard_text is paid per document and per finding.)',
+            'RETURNS: one catalog object; how each part maps to guard_text arguments is under PARAMETERS.',
             'PARAMETERS: None: call with an empty object {}; the catalog is static and cannot be filtered. Its output feeds guard_text: pii / secret entries are valid entityTypes values once the parenthesised note is dropped ("CREDIT_CARD (Luhn)" -> "CREDIT_CARD"); entries marked "opt-in" only appear when guard_text enables detectNames / detectAddresses / entropyScan; redaction_styles keys are the allowed redactionStyle values.',
             'EXAMPLE: {} -> {"pii":["EMAIL","PHONE",...],"secret":["AWS_ACCESS_KEY",...],...}',
         ].join('\n'),
