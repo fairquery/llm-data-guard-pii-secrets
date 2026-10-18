@@ -191,8 +191,8 @@ Optional guides from Fairquery for wiring this Actor into agents and automations
 ## Data handling, security and support
 
 - **Data retention:** Text is processed in memory, and the Actor is designed not to log it. By default the `INPUT` record is deleted when the run ends (`purgeInputAfterRun`), so only the results dataset remains in your Apify account, under your Apify plan's retention. You can delete run storages and named stores at any time in Apify Console or through the API. Fairquery's code sends nothing to Fairquery. Details per tool: https://getfairquery.com/security/
-- **Security reports:** email fairquery@proton.me or use private vulnerability reporting on the GitHub repository (process and response targets: https://getfairquery.com/security/#report).
-- **Support:** the Issues tab on this page, a GitHub issue, or fairquery@proton.me. We aim to reply within 3 business days (a target, not an SLA).
+- **Security reports:** email info@getfairquery.com or use private vulnerability reporting on the GitHub repository (process and response targets: https://getfairquery.com/security/#report).
+- **Support:** the Issues tab on this page, a GitHub issue, or info@getfairquery.com. We aim to reply within 3 business days (a target, not an SLA).
 - **Changes and procurement:** release notes are in the GitHub repository's releases and changelog. Limits, versioning, third parties and other procurement answers: https://getfairquery.com/trust/
 
 ## Disclaimer
@@ -204,5 +204,5 @@ Pattern-based detection finds most but not all sensitive data: unusual formats, 
 - Guide: [How to redact PII and secrets before sending data to an LLM](https://getfairquery.com/posts/redact-pii-secrets-before-sending-data-to-llm/)
 - Apify Store: https://apify.com/fairquery/llm-data-guard-pii-secrets
 - GitHub: https://github.com/fairquery/llm-data-guard-pii-secrets
-- Contact: fairquery@proton.me
+- Contact: info@getfairquery.com
 - License: MIT

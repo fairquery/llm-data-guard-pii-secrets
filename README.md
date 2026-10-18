@@ -219,7 +219,7 @@ Pattern-based detection finds most but not all sensitive data: unusual formats, 
 
 - Apify Store: https://apify.com/fairquery/llm-data-guard-pii-secrets
 - GitHub: https://github.com/fairquery/llm-data-guard-pii-secrets
-- Contact: fairquery@proton.me
+- Contact: info@getfairquery.com
 - License: MIT
 
 ## Development
