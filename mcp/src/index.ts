@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
  * Fairquery stdio MCP server for Apify Actor fairquery/llm-data-guard-pii-secrets.
- * Tools: guard_text (runs the Actor, needs APIFY_TOKEN) and list_detectors (free, local).
+ * Tools: guard_text (runs the Actor, needs APIFY_TOKEN), list_detectors and restore_placeholders (free, local).
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { callActorTool, ok, READ_ONLY_LOCAL, READ_ONLY_REMOTE } from './common.js';
+import { callActorTool, fail, ok, READ_ONLY_LOCAL, READ_ONLY_REMOTE } from './common.js';
+import { restoreText } from './restore.js';
 
 const ACTOR_ID = 'fairquery~llm-data-guard-pii-secrets';
 
@@ -18,7 +19,7 @@ const DETECTORS = {
     pricing_events: { 'document-processed': '$0.0015 per document', finding: '$0.0002 per finding' },
 };
 
-const server = new McpServer({ name: 'fairquery-llm-data-guard', version: '1.0.3' });
+const server = new McpServer({ name: 'fairquery-llm-data-guard', version: '1.1.0' });
 
 server.registerTool(
     'guard_text',
@@ -27,7 +28,7 @@ server.registerTool(
         description: [
             'WHAT: Scan text documents (or public document URLs: txt/md/json/csv/HTML/PDF) for PII (emails, phones, US SSNs, Luhn-valid cards, IBANs, UK NINOs, IPs, optional person names/addresses) and secrets (AWS/GitHub/Slack/Stripe/OpenAI/... keys, JWTs, private keys, URL credentials, high-entropy key=value). mode="redact" returns sanitized text; mode="restore" puts originals back into LLM output using a placeholder map.',
             'WHEN TO USE: before sending prompts, tickets, logs or files to an LLM or third party; to audit text for leaked credentials; to de-anonymize an LLM answer after a placeholder redaction.',
-            'WHEN NOT TO USE: to see which entity types exist or pick entityTypes, call list_detectors (free, local). Not for binary files/images (PDF text layer only, no OCR) or for validating whether an email is deliverable.',
+            'WHEN NOT TO USE: to see which entity types exist or pick entityTypes, call list_detectors (free, local); to only put originals back into an LLM answer, restore_placeholders (free, local) gives the same output as mode="restore" without a run. Not for binary files/images (PDF text layer only, no OCR) or for validating whether an email is deliverable.',
             'COST: paid. Runs Apify Actor fairquery/llm-data-guard-pii-secrets with your APIFY_TOKEN; pay-per-event: $0.0015 per document processed + $0.0002 per finding (error rows free). Example: 10 documents with 20 findings ~ $0.02. Typical run a few seconds.',
             'RETURNS: one type="document" row per input (findings[] hold masked previews only, never raw values; output_text only in redact/restore modes; placeholder_map only with returnPlaceholderMap=true) or free type="error" rows with code/message.',
             'EXAMPLE: {"texts":["Mail jane@acme.com, key AKIAIOSFODNN7EXAMPLE"],"mode":"redact","redactionStyle":"placeholder"} -> output_text with the email replaced by [EMAIL_1] and the key by a placeholder; findings lists EMAIL and AWS_ACCESS_KEY.',
@@ -111,6 +112,47 @@ server.registerTool(
         annotations: { title: 'List detectors', ...READ_ONLY_LOCAL },
     },
     async () => ok(DETECTORS),
+);
+
+const MAX_RESTORE_DOCS = 1000;
+const MAX_RESTORE_CHARS = 5_000_000;
+
+server.registerTool(
+    'restore_placeholders',
+    {
+        title: 'Restore placeholders with original values (free, local)',
+        description: [
+            'WHAT: Put original values back into texts (typically an LLM answer) that contain placeholders such as [EMAIL_1], using the placeholder_map from a guard_text redact call. Same output_text as guard_text mode="restore", computed on your machine.',
+            'WHEN TO USE: after the LLM answered a prompt you redacted with guard_text (mode="redact", redactionStyle="placeholder", returnPlaceholderMap=true), before showing the answer to the user.',
+            'WHEN NOT TO USE: to detect or redact (guard_text) or list entity types (list_detectors). Masked and hashed values cannot be restored; only placeholder style is reversible.',
+            'BEHAVIOR: no network call; the map never leaves your machine; milliseconds. Up to 1000 texts and 5,000,000 chars in total per call.',
+            'COST: free; no APIFY_TOKEN. (guard_text mode="restore" bills $0.0015 per document for the same result.)',
+            'RETURNS: one type="restored_document" row per text with output_text, replacements and unknown_placeholders; Errors: INPUT_TOO_LARGE.',
+            'PARAMETERS: placeholderMap: pass the placeholder_map of the redact call unchanged; numbering restarts on every redact call, so use the map from the call that produced the placeholders. Tokens shaped [UPPERCASE_TYPE_N] are replaced when the map has them (exact, case-sensitive, one pass) and listed in unknown_placeholders otherwise (left as is); other map keys are ignored. A placeholder the LLM rewrote (e.g. "EMAIL_1" without brackets) is not restored. The output holds the ORIGINAL sensitive values: show it to the user, do not send it back to the LLM.',
+            'EXAMPLE: {"texts":["I will email [EMAIL_1] today."],"placeholderMap":{"[EMAIL_1]":"jane@acme.com"}} -> output_text "I will email jane@acme.com today.", replacements 1.',
+        ].join('\n'),
+        inputSchema: {
+            texts: z
+                .array(z.string())
+                .min(1)
+                .max(MAX_RESTORE_DOCS)
+                .describe('Required. 1-1000 texts containing placeholders, 5,000,000 chars in total. Example: ["I will email [EMAIL_1] today."]'),
+            placeholderMap: z
+                .record(z.string())
+                .describe('Required. Object placeholder -> original value, exactly as returned in placeholder_map by a guard_text redact call. Example: {"[EMAIL_1]":"jane@acme.com"}'),
+        },
+        outputSchema: {
+            items: z.array(z.record(z.unknown())).describe('type=restored_document rows (doc_index, chars, replacements, unknown_placeholders, output_text)'),
+            count: z.number().describe('Number of rows in items'),
+        },
+        annotations: { title: 'Restore placeholders (free, local)', ...READ_ONLY_LOCAL },
+    },
+    async ({ texts, placeholderMap }) => {
+        const total = texts.reduce((n, t) => n + t.length, 0);
+        if (total > MAX_RESTORE_CHARS) return fail('INPUT_TOO_LARGE', `Total ${total} chars exceeds ${MAX_RESTORE_CHARS}; split into several calls.`);
+        const items = texts.map((t, i) => ({ type: 'restored_document', doc_index: i, chars: t.length, ...restoreText(t, placeholderMap) }));
+        return ok({ items, count: items.length });
+    },
 );
 
 server.connect(new StdioServerTransport()).catch((err: unknown) => {
