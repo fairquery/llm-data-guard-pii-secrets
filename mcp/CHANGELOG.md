@@ -1,5 +1,14 @@
 # Changelog (MCP server)
 
+## 1.1.1 - unreleased (preview)
+- Tool text only (disambiguation pass; no tool names, inputs, outputs, limits or prices changed):
+  - Server `instructions` describe the one-tool-per-step round trip (list_detectors -> guard_text -> [get_run_results] -> LLM -> restore_placeholders), which tools cost money and which never leave your machine.
+  - guard_text is described as the only tool that inspects content; `mode="restore"` is marked as kept for Actor pipelines outside MCP, with restore_placeholders as the default way to restore (same output, free, local).
+  - get_run_results says it only follows guard_text(waitForFinish=false) and scans nothing; status/finished semantics moved to RETURNS; how to stop a run early (Apify console) is stated.
+  - list_detectors says it is reference data that inspects no text and is not needed before every guard_text call; BEHAVIOR no longer restates the read-only annotation.
+  - restore_placeholders RETURNS / PARAMETERS no longer restate the output and input schemas.
+- Smoke test checks the server instructions and that every tool description names its siblings.
+
 ## 1.1.0 - 2026-10-18
 - New free tool `restore_placeholders`: puts original values back into texts (typically an LLM answer) from the placeholder_map of a guard_text redact call; same placeholder pattern and output_text as guard_text mode="restore" (verified against an Actor run), computed locally without a run. Rows report replacements and unknown_placeholders. guard_text WHEN NOT TO USE points to it.
 - guard_text: new optional `waitForFinish` (default true). false starts the Actor run and returns at once with `run` (run_id, status, dataset_id, console_url); same price.

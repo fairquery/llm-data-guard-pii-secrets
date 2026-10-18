@@ -31,6 +31,16 @@ await withClient(env, async (client) => {
     const { tools } = await client.listTools();
     console.log('OK tools/list:', tools.map((t) => `${t.name}${t.outputSchema ? ' (outputSchema)' : ''}${t.annotations ? ' (annotations)' : ''}`).join(', '));
     for (const n of ['guard_text', 'list_detectors', 'restore_placeholders', 'get_run_results']) if (!tools.some((t) => t.name === n)) throw new Error('missing tool ' + n);
+    const NAMES = ['guard_text', 'list_detectors', 'restore_placeholders', 'get_run_results'];
+    for (const t of tools) {
+        for (const sec of ['WHAT:', 'WHEN TO USE:', 'WHEN NOT TO USE:', 'COST:', 'RETURNS:', 'PARAMETERS:', 'EXAMPLE:']) if (!t.description.includes(sec)) throw new Error(t.name + ' missing ' + sec);
+        const whenNot = t.description.split('\n').find((l) => l.startsWith('WHEN NOT TO USE:')) ?? '';
+        const named = NAMES.filter((n) => n !== t.name && whenNot.includes(n));
+        if (named.length < 2) throw new Error(t.name + ' WHEN NOT TO USE names only ' + JSON.stringify(named));
+    }
+    const instr = client.getInstructions() ?? '';
+    if (!NAMES.every((n) => instr.includes(n))) throw new Error('server instructions must name all four tools');
+    console.log('OK descriptions: all sections, WHEN NOT TO USE names >= 2 siblings each; server instructions name all 4 tools');
     const h = await client.callTool({ name: 'list_detectors', arguments: {} });
     if (h.isError || !h.structuredContent) throw new Error('helper failed: ' + JSON.stringify(h).slice(0, 300));
     console.log('OK list_detectors (free, no token)');

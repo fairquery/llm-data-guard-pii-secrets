@@ -136,6 +136,8 @@ The [`mcp/`](./mcp) folder is a stdio MCP server (TypeScript, `@modelcontextprot
 | `list_detectors` | Lists detectable types, redaction styles and events | Free, local, no token |
 | `restore_placeholders` | Puts original values back into placeholder text (e.g. an LLM answer) from a `placeholder_map`; same output as `guard_text` `mode="restore"`, without a run | Free, local, no token |
 
+Typical round trip: `list_detectors` (optional) -> `guard_text` (redact, `returnPlaceholderMap: true`) -> [`get_run_results` if you used `waitForFinish: false`] -> send the redacted text to your LLM -> `restore_placeholders` on the answer. Only `guard_text` is billed; `list_detectors` and `restore_placeholders` run entirely on your machine.
+
 ```bash
 cd mcp && npm install && npm run build
 node scripts/smoke-test.mjs                          # initialize + tools/list + free tool, no token
