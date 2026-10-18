@@ -193,7 +193,7 @@ Pattern-based detection finds most but not all sensitive data: unusual formats, 
 
 ## Links
 
-- Guide: [How to redact PII and secrets before sending data to an LLM](https://fairquery.github.io/posts/redact-pii-secrets-before-sending-data-to-llm/)
+- Guide: [How to redact PII and secrets before sending data to an LLM](https://getfairquery.com/posts/redact-pii-secrets-before-sending-data-to-llm/)
 - Apify Store: https://apify.com/fairquery/llm-data-guard-pii-secrets
 - GitHub: https://github.com/fairquery/llm-data-guard-pii-secrets
 - Contact: fairquery@proton.me
