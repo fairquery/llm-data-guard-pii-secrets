@@ -30,7 +30,7 @@ delete env.APIFY_TOKEN;
 await withClient(env, async (client) => {
     const { tools } = await client.listTools();
     console.log('OK tools/list:', tools.map((t) => `${t.name}${t.outputSchema ? ' (outputSchema)' : ''}${t.annotations ? ' (annotations)' : ''}`).join(', '));
-    for (const n of ['guard_text', 'list_detectors', 'restore_placeholders']) if (!tools.some((t) => t.name === n)) throw new Error('missing tool ' + n);
+    for (const n of ['guard_text', 'list_detectors', 'restore_placeholders', 'get_run_results']) if (!tools.some((t) => t.name === n)) throw new Error('missing tool ' + n);
     const h = await client.callTool({ name: 'list_detectors', arguments: {} });
     if (h.isError || !h.structuredContent) throw new Error('helper failed: ' + JSON.stringify(h).slice(0, 300));
     console.log('OK list_detectors (free, no token)');
@@ -43,6 +43,10 @@ await withClient(env, async (client) => {
     const r = await client.callTool({ name: 'guard_text', arguments: MAIN_ARGS });
     if (!JSON.stringify(r).includes('APIFY_TOKEN_MISSING')) throw new Error('expected APIFY_TOKEN_MISSING');
     console.log('OK guard_text without token -> APIFY_TOKEN_MISSING');
+    const g = await client.callTool({ name: 'get_run_results', arguments: { runId: 'abcdefghijklmnopq' } });
+    const a = await client.callTool({ name: 'guard_text', arguments: { ...MAIN_ARGS, waitForFinish: false } });
+    if (!JSON.stringify(g).includes('APIFY_TOKEN_MISSING') || !JSON.stringify(a).includes('APIFY_TOKEN_MISSING')) throw new Error('expected APIFY_TOKEN_MISSING (async)');
+    console.log('OK get_run_results / async guard_text without token -> APIFY_TOKEN_MISSING');
 });
 
 if (process.argv.includes('--call')) {
@@ -55,5 +59,22 @@ if (process.argv.includes('--call')) {
         const paid = (pr.structuredContent?.items ?? []).filter((i) => i.type === 'document').map((i) => i.output_text);
         if (JSON.stringify(paid) !== JSON.stringify(localRestore)) throw new Error('restore mismatch: paid ' + JSON.stringify(paid) + ' local ' + JSON.stringify(localRestore));
         console.log('OK restore_placeholders output == guard_text mode="restore" output (Actor run)');
+        const s1 = await client.callTool({ name: 'guard_text', arguments: { ...MAIN_ARGS, waitForFinish: false } });
+        const runId = s1.structuredContent?.run?.run_id;
+        if (s1.isError || !runId) throw new Error('async start failed: ' + JSON.stringify(s1).slice(0, 500));
+        console.log('OK guard_text waitForFinish=false -> run started, status', s1.structuredContent.run.status);
+        let res;
+        for (let i = 0; i < 30; i++) {
+            res = await client.callTool({ name: 'get_run_results', arguments: { runId } });
+            if (res.isError) throw new Error('poll failed: ' + JSON.stringify(res).slice(0, 500));
+            if (res.structuredContent.run.finished) break;
+            await new Promise((r) => setTimeout(r, 5000));
+        }
+        const rs = res.structuredContent;
+        if (rs.run.status !== 'SUCCEEDED' || rs.total !== r.structuredContent.count || rs.items[0]?.type !== 'document') throw new Error('unexpected result: ' + JSON.stringify(rs).slice(0, 500));
+        console.log('OK get_run_results', rs.run.status, 'rows', rs.total, '(same count as the synchronous call)');
+        const bad = await client.callTool({ name: 'get_run_results', arguments: { runId: 'zzzzzzzzzzzzzzzzz' } });
+        if (!JSON.stringify(bad).includes('RUN_NOT_FOUND')) throw new Error('expected RUN_NOT_FOUND');
+        console.log('OK unknown run -> RUN_NOT_FOUND');
     });
 }
