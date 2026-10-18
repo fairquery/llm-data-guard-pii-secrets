@@ -28,7 +28,7 @@ This repository contains an Apify Actor and a local stdio MCP server (`mcp/`).
 
 - **Actor runs** execute in *your own* Apify account. Input is stored as the run's `INPUT` record and results in the run's default dataset, both unnamed storages that Apify deletes automatically under your plan's data retention. Besides a `RUN_SUMMARY` record, the Actor writes nothing else, keeps no copies and sends no data to Fairquery. Logs contain counts and status, not your input content.
 - Text is processed in memory and never logged. The `INPUT` record is deleted at run end by default (`purgeInputAfterRun`). The placeholder map is returned only if `returnPlaceholderMap` is set. URLs are fetched only if you pass `documentUrls`.
-- **MCP server:** runs on your machine. Free tools make no calls to Apify or Fairquery. Paid tools run the Actor with your own `APIFY_TOKEN`, which is read from the environment only when needed and never logged or returned.
+- **MCP server:** runs on your machine. `list_detectors` and `restore_placeholders` make no network calls. `get_run_results` (free) makes read-only GET requests to the Apify API with your own `APIFY_TOKEN`, only for runs of this Actor in your own account. `guard_text` (paid) runs the Actor with your token. The token is read from the environment only when needed and never logged or returned. No tool calls a Fairquery endpoint.
 - The repository contains no credentials.
 
 Full details: https://getfairquery.com/security/

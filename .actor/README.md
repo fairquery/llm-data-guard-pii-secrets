@@ -188,6 +188,13 @@ Optional guides from Fairquery for wiring this Actor into agents and automations
 - [Agent Prompt Pack for Research & Lead Ops](https://fairquery.gumroad.com/l/djdilu): 69 prompts for company research, lead cleaning, SEO and security reviews.
 - [Agent Starter Kit: 10 copy-paste MCP + n8n recipes](https://fairquery.gumroad.com/l/idvrck) ($5): 10 copy-paste MCP + n8n recipes, with ready-made Claude/Cursor configs and 3 starter workflows.
 
+## Data handling, security and support
+
+- **Data retention:** Text is processed in memory, and the Actor is designed not to log it. By default the `INPUT` record is deleted when the run ends (`purgeInputAfterRun`), so only the results dataset remains in your Apify account, under your Apify plan's retention. You can delete run storages and named stores at any time in Apify Console or through the API. Fairquery's code sends nothing to Fairquery. Details per tool: https://getfairquery.com/security/
+- **Security reports:** email fairquery@proton.me or use private vulnerability reporting on the GitHub repository (process and response targets: https://getfairquery.com/security/#report).
+- **Support:** the Issues tab on this page, a GitHub issue, or fairquery@proton.me. We aim to reply within 3 business days (a target, not an SLA).
+- **Changes and procurement:** release notes are in the GitHub repository's releases and changelog. Limits, versioning, third parties and other procurement answers: https://getfairquery.com/trust/
+
 ## Disclaimer
 
 Pattern-based detection finds most but not all sensitive data: unusual formats, non-English names, images and scanned PDFs (no OCR) can slip through, and some matches are false positives. Use it as one layer of a data-protection program, not as a compliance certification. Only process data you are allowed to process.
